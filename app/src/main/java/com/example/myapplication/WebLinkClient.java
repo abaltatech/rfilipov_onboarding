@@ -2,6 +2,7 @@ package com.example.myapplication;
 
 import static android.content.ContentValues.TAG;
 
+import static com.abaltatech.mcs.logger.MCSLogger.ELogType.eError;
 import static com.abaltatech.mcs.logger.MCSLogger.ELogType.eInfo;
 
 import android.Manifest;
@@ -558,23 +559,47 @@ class WebLinkClient implements IClientNotification,
     }
 
     @Override
-    public void onServerListUpdated(ServerInfo[] serverInfos) {
+    public void onServerListUpdated(ServerInfo[] servers) {
 
     }
 
     @Override
     public void onConnectionEstablished(PeerDevice peerDevice) {
-
+        MCSLogger.log(eInfo, TAG, "Connection established with " + peerDevice.getName());
+        if (m_listener != null) {
+            m_listener.onConnectionEstablished(peerDevice);
+        }
+        synchronized (m_connListeners) {
+            for (IConnectionStatusNotification listener : m_connListeners) {
+                listener.onConnectionEstablished(peerDevice);
+            }
+        }
     }
 
     @Override
-    public void onConnectionFailed(PeerDevice peerDevice, EConnectionResult eConnectionResult) {
-
+    public void onConnectionFailed(PeerDevice peerDevice, EConnectionResult result) {
+        MCSLogger.log(eError, TAG, "Connection failed with " + peerDevice.getName() + ". Result: " + result);
+        if (m_listener != null) {
+            m_listener.onConnectionFailed(peerDevice, result);
+        }
+        synchronized (m_connListeners) {
+            for (IConnectionStatusNotification listener : m_connListeners) {
+                listener.onConnectionFailed(peerDevice, result);
+            }
+        }
     }
 
     @Override
     public void onConnectionClosed(PeerDevice peerDevice) {
-
+        MCSLogger.log(eInfo, TAG, "Connection closed with " + peerDevice.getName());
+        if (m_listener != null) {
+            m_listener.onConnectionClosed(peerDevice);
+        }
+        synchronized (m_connListeners) {
+            for (IConnectionStatusNotification listener : m_connListeners) {
+                listener.onConnectionClosed(peerDevice);
+            }
+        }
     }
 
     @Override
@@ -614,12 +639,18 @@ class WebLinkClient implements IClientNotification,
 
     @Override
     public void onConnectionLost() {
-
+        MCSLogger.log(eInfo, TAG, "Connection  lost");
+        if(m_listener != null) {
+            m_listener.onConnectionLost();
+        }
     }
 
     @Override
     public void onConnectionResumed() {
-
+        MCSLogger.log(eInfo, TAG, "Connection  resumed");
+        if(m_listener != null) {
+            m_listener.onConnectionResumed();
+        }
     }
 
     @Override
