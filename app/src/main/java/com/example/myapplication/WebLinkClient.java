@@ -34,6 +34,8 @@ import com.abaltatech.mcs.socket.android.AndroidSocketConnectionMethod;
 import com.abaltatech.mcs.usbhost.android.ConnectionMethodAOA;
 import com.abaltatech.mcs.usbhost.android.AOALayer;
 import com.abaltatech.mcs.utils.android.WLSerializer;
+import com.abaltatech.weblink.core.DataBuffer;
+import com.abaltatech.weblink.core.IWebLinkConnection;
 import com.abaltatech.weblink.core.WLConnectionManager;
 import com.abaltatech.weblink.core.WLScenarioConnection;
 import com.abaltatech.weblink.core.WLTypes;
@@ -245,9 +247,22 @@ class WebLinkClient implements IClientNotification,
             protected void onPingResponseReceived(boolean isSenderInactive) {
                 MCSLogger.log(TAG, "onPingResponseReceived, isSenderInactive: " + isSenderInactive);
                 super.onPingResponseReceived(isSenderInactive);//Always call super for this function.
-                //MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseReceived "+isSenderInactive);
+                MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseReceived "+isSenderInactive);
                 if (isSenderInactive) {
                     //Do your own restart of the connection here! (if not auto-reconfiguring).
+                }
+                else
+                {
+                    byte[] pongPayload = new byte[2];
+                    short pongFlags = 0x0001; // Set "Is Response Message" flag
+                    pongPayload[0] = (byte)(pongFlags & 0xFF);        // Low byte
+                    pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF); // High byte
+
+                    // Step 9: Create the Pong command
+                    Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
+
+                    IWebLinkConnection conn = m_client.getConnection();
+                    conn.sendCommand(pongCommand);
                 }
 
                 if (m_pingHandler != null) {
@@ -654,8 +669,58 @@ class WebLinkClient implements IClientNotification,
     }
 
     @Override
-    public boolean onCommandReceived(Command command) {
-        return false;
+    public boolean onCommandReceived(Command command)
+    {
+        if (command == null || command.getCommandID() != 0x4C || !command.isValid()) {
+            MCSLogger.log(TAG, "Received invalid or non-ping command");
+            return false;
+        }
+
+        try {
+
+            MCSLogger.log(TAG, "Received Ping command: " + command.getCommandDataString());
+
+            DataBuffer payload = new DataBuffer();
+            if (!command.getPayload(payload)) {
+                MCSLogger.log(TAG, "Failed to extract ping payload");
+                return false;
+            }
+
+            if (payload.getSize() < 2) {
+                MCSLogger.log(TAG, "Ping payload too small");
+                return false;
+            }
+
+            short receivedFlags = payload.getShort(0);
+            boolean isResponse = (receivedFlags & 0x0001) != 0;
+            boolean isRegularPing = (receivedFlags & 0x0002) != 0;
+
+            MCSLogger.log(TAG, "Ping details - IsResponse: " + isResponse + ", IsRegularPing: " + isRegularPing);
+
+            if (isResponse) {
+                MCSLogger.log(TAG, "Received ping response, not sending pong");
+                return true;
+            }
+
+            // Step 8: Prepare the Pong payload
+            byte[] pongPayload = new byte[2];
+            short pongFlags = 0x0001; // Set "Is Response Message" flag
+            pongPayload[0] = (byte)(pongFlags & 0xFF);        // Low byte
+            pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF); // High byte
+
+            Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
+
+            IWebLinkConnection conn = m_client.getConnection();
+            conn.sendCommand(pongCommand);
+
+            MCSLogger.log(TAG, "Sent Pong command");
+
+            return true;
+
+        } catch (Exception e) {
+            MCSLogger.log(TAG, "Error handling ping command", e);
+            return false;
+        }
     }
 
     @Override
@@ -680,7 +745,14 @@ class WebLinkClient implements IClientNotification,
 
     @Override
     public void onDeviceLost(PeerDevice peerDevice) {
-
+        MCSLogger.log(TAG, "onDeviceLost: %s", peerDevice.toString());
+        for (PeerDevice it : m_connectedDevices) {
+            if (it.equals(peerDevice)) {
+                m_connectedDevices.remove(it);
+                m_connectionManager.disconnectDevice(peerDevice);
+                break;
+            }
+        }
     }
 
     @Override
