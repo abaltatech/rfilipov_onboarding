@@ -669,15 +669,13 @@ class WebLinkClient implements IClientNotification,
     }
 
     @Override
-    public boolean onCommandReceived(Command command)
-    {
+    public boolean onCommandReceived(Command command) {
         if (command == null || command.getCommandID() != 0x4C || !command.isValid()) {
             MCSLogger.log(TAG, "Received invalid or non-ping command");
             return false;
         }
 
         try {
-
             MCSLogger.log(TAG, "Received Ping command: " + command.getCommandDataString());
 
             DataBuffer payload = new DataBuffer();
@@ -702,11 +700,11 @@ class WebLinkClient implements IClientNotification,
                 return true;
             }
 
-            // Step 8: Prepare the Pong payload
+            // Prepare and send pong
             byte[] pongPayload = new byte[2];
             short pongFlags = 0x0001; // Set "Is Response Message" flag
-            pongPayload[0] = (byte)(pongFlags & 0xFF);        // Low byte
-            pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF); // High byte
+            pongPayload[0] = (byte)(pongFlags & 0xFF);
+            pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF);
 
             Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
 
