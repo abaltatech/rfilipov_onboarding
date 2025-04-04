@@ -670,7 +670,7 @@ class WebLinkClient implements IClientNotification,
 
     @Override
     public boolean onDeviceScanningBegin(String s) {
-        return false;
+        return true;
     }
 
     @Override
@@ -689,8 +689,9 @@ class WebLinkClient implements IClientNotification,
     }
 
     @Override
-    public void onConnectionPartialStateChanged(WLConnectionManager wlConnectionManager, ConnectionScenario connectionScenario, PeerDevice peerDevice, int i) {
-
+    public void onConnectionPartialStateChanged(WLConnectionManager connectionManager, ConnectionScenario scenario, PeerDevice peerDevice, int step) {
+        if (connectionManager.isPartialConnected() && !connectionManager.isConnected()){
+            m_client.onConnectionPartiallyConnected(connectionManager);
+        }
     }
-
 } 
