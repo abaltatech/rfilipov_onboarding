@@ -103,7 +103,7 @@ public class MainActivity extends AppCompatActivity {
             flag = client.isConnected();
 
             try {
-                Thread.sleep(1000);
+                Thread.sleep(3000);
             } catch (InterruptedException e) {
                 // Handle the exception
                 Thread.currentThread().interrupt();
@@ -112,6 +112,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Toast.makeText(MainActivity.this, "Connection has stopped", Toast.LENGTH_SHORT).show();
+        MCSLogger.log(eInfo, TAG, "***************Connection has stopped!**************");
 
     }
 }

@@ -671,8 +671,7 @@ class WebLinkClient implements IClientNotification,
     @Override
     public boolean onCommandReceived(Command command)
     {
-        return false;
-        /*if (command == null || command.getCommandID() != 0x4C || !command.isValid()) {
+        if (command == null || command.getCommandID() != 0x4C || !command.isValid()) {
             MCSLogger.log(TAG, "Received invalid or non-ping command");
             return false;
         }
@@ -721,7 +720,7 @@ class WebLinkClient implements IClientNotification,
         } catch (Exception e) {
             MCSLogger.log(TAG, "Error handling ping command", e);
             return false;
-        }*/
+        }
     }
 
     @Override
