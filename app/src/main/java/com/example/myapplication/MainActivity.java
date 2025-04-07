@@ -75,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
                 clientFeatures, clientFeaturesString
         );
 
-        String Address = "172.20.10.12:12345";
+        String Address = "10.40.3.54:12345";
         PeerDevice device = new PeerDevice("Alice", "Socket", Address);
         WebLinkClient client = WLApplication.getInstance().getWebLinkClient();
         wlClient.setPeriodicPingParams(5000, 15000);

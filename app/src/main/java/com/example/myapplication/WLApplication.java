@@ -4,6 +4,7 @@ import static android.content.ContentValues.TAG;
 import static com.abaltatech.mcs.logger.MCSLogger.ELogType.eInfo;
 
 import android.app.Application;
+import android.content.Context;
 import android.widget.Toast;
 
 import com.abaltatech.mcs.connectionmanager.PeerDevice;
@@ -18,7 +19,7 @@ import java.util.Map;
 public class WLApplication extends Application {
 
     private WebLinkClient m_wlClient;
-    private static WLApplication s_Instance;
+    private static WLApplication s_Instance = null;
     public static WLApplication getInstance() {
         return s_Instance;
     }
@@ -37,7 +38,7 @@ public class WLApplication extends Application {
         MCSLogger.registerLogger(new LoggerAndroid());
         MCSLogger.setLogLevel(MCSLogger.eAll);
         s_Instance = this;
-        m_wlClient = new WebLinkClient(s_Instance.getApplicationContext(), null);
+        m_wlClient = new WebLinkClient(s_Instance.getApplicationContext(), getAppProperties());
     }
 
     public void terminate() {
@@ -45,6 +46,19 @@ public class WLApplication extends Application {
             m_wlClient.terminate();
             m_wlClient = null;
         }
+    }
+
+    public static Context getAppContext() {
+        return s_Instance != null ? s_Instance.getApplicationContext() : null;
+    }
+
+    private Map<String, String> getAppProperties() {
+        final HashMap<String, String> res = new HashMap<>();
+
+        res.put(WLConstants.PROP_BT_SERVICE_LISTEN_UUID, WLTypes.BT_SERVICE_CONNECT_ID_CLIENT);
+        res.put(WLConstants.PROP_BT_SERVICE_CONNECT_UUID, WLTypes.BT_SERVICE_LISTEN_ID_HOST);
+
+        return res;
     }
 
 }

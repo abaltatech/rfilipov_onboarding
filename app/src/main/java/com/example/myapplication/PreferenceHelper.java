@@ -380,7 +380,7 @@ public class PreferenceHelper {
      * @return String value
      */
     private static String getPreferenceString(int resId) {
-        Context context = App.getAppContext();
+        Context context = WLApplication.getAppContext();
         if (context != null) {
             return context.getString(resId);
         }
