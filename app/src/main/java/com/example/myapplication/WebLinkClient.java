@@ -121,7 +121,7 @@ class WebLinkClient implements IClientNotification,
     private final Context m_context;
     private ConnectionManager m_connectionManager;
     private WLConnectionManager m_wlConnectionManager;
-    private CustomWLClientCore m_client;
+    private WebLinkClientCore m_client;
     private ServiceClient m_serviceClient;
     private Services m_services;
 
@@ -223,7 +223,7 @@ class WebLinkClient implements IClientNotification,
         wifiManager.getWiFiControlHandlerSTA().setContext(context);
 
         // Create the client core
-        m_client = new CustomWLClientCore(
+        m_client = new WebLinkClientCore(
                 context,
                 this,
                 myIdentity,
