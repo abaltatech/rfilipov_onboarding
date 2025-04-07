@@ -251,19 +251,6 @@ class WebLinkClient implements IClientNotification,
                 if (isSenderInactive) {
                     //Do your own restart of the connection here! (if not auto-reconfiguring).
                 }
-                else
-                {
-                    byte[] pongPayload = new byte[2];
-                    short pongFlags = 0x0001; // Set "Is Response Message" flag
-                    pongPayload[0] = (byte)(pongFlags & 0xFF);        // Low byte
-                    pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF); // High byte
-
-                    // Step 9: Create the Pong command
-                    Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
-
-                    IWebLinkConnection conn = m_client.getConnection();
-                    conn.sendCommand(pongCommand);
-                }
 
                 if (m_pingHandler != null) {
                     m_pingHandler.onPingResponseReceived(isSenderInactive);
@@ -678,40 +665,45 @@ class WebLinkClient implements IClientNotification,
         try {
             MCSLogger.log(TAG, "Received Ping command: " + command.getCommandDataString());
 
+            // Check payload
             DataBuffer payload = new DataBuffer();
-            if (!command.getPayload(payload)) {
-                MCSLogger.log(TAG, "Failed to extract ping payload");
-                return false;
+            boolean hasPayload = command.getPayload(payload);
+            int payloadSize = hasPayload ? payload.getSize() : 0;
+            MCSLogger.log(TAG, "Ping command payload: hasPayload=" + hasPayload + ", size=" + payloadSize);
+
+            short receivedFlags = 0;
+            if (hasPayload && payloadSize >= 2) {
+                receivedFlags = payload.getShort(0);
+                MCSLogger.log(TAG, "Received flags: " + receivedFlags);
+            } else {
+                MCSLogger.log(TAG, "Ping payload missing or too small, assuming default flags");
             }
 
-            if (payload.getSize() < 2) {
-                MCSLogger.log(TAG, "Ping payload too small");
-                return false;
-            }
-
-            short receivedFlags = payload.getShort(0);
             boolean isResponse = (receivedFlags & 0x0001) != 0;
             boolean isRegularPing = (receivedFlags & 0x0002) != 0;
-
             MCSLogger.log(TAG, "Ping details - IsResponse: " + isResponse + ", IsRegularPing: " + isRegularPing);
 
             if (isResponse) {
                 MCSLogger.log(TAG, "Received ping response, not sending pong");
-                return true;
+                return true; // No need to respond to a response
             }
 
-            // Prepare and send pong
+            // Prepare pong response with only "Is Response Message" flag
             byte[] pongPayload = new byte[2];
-            short pongFlags = 0x0001; // Set "Is Response Message" flag
+            short pongFlags = 0x0001; // Set only "Is Response Message" flag
             pongPayload[0] = (byte)(pongFlags & 0xFF);
             pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF);
 
             Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
 
             IWebLinkConnection conn = m_client.getConnection();
-            conn.sendCommand(pongCommand);
-
-            MCSLogger.log(TAG, "Sent Pong command");
+            if (conn != null) {
+                conn.sendCommand(pongCommand);
+                MCSLogger.log(TAG, "Sent Pong command with flags: " + pongFlags);
+            } else {
+                MCSLogger.log(TAG, "Connection is null, cannot send pong");
+                return false;
+            }
 
             return true;
 
