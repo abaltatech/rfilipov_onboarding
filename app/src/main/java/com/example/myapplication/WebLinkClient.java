@@ -86,7 +86,8 @@ import java.util.UUID;
 class WebLinkClient implements IClientNotification,
         WLConnectionManager.ConnectionStateChangedDelegate,
         WLConnectionManager.ConnectionPartialStateChangedDelegate,
-        IDeviceScanningNotification {
+        IDeviceScanningNotification  {
+
     private static final java.lang.String TAG = "WebLinkClientTag";
 
     private static final String DEFAULT_APP_NAME_LANGUAGE = "en";
@@ -104,7 +105,7 @@ class WebLinkClient implements IClientNotification,
      * Predefined consumer controls in the order they are defined in the HID Report Descriptor.
      * These should match the order and presence in the platform's Consumer Report.
      */
-    private static final short[] PREDEFINED_CONSUMER_CONTROLS = new short[]{
+    private static final short[] PREDEFINED_CONSUMER_CONTROLS = new short[] {
             HIDRequestProperties.CU_Menu_Home, //first bit
             HIDRequestProperties.CU_Snapshot_Screenshot,
             HIDRequestProperties.CU_AC_Search_Spotlight,
@@ -147,8 +148,27 @@ class WebLinkClient implements IClientNotification,
     private boolean m_isConnected = false;
     private int m_numberOfConnects = 0;
     private String m_lastScenarioID;
-    private final Map<String, String> m_properties;
+    private final Map<String, String>          m_properties;
+    private IWiFiControlHandlerAP m_controlHandlerAP = WiFiManager.instance().getWiFiControlHandlerAP();
     private BluetoothConnectionMethod m_btConnectionMethod;
+
+
+    public boolean onConnectionAttempt(PeerDevice device) {
+        if (device == null) {
+            MCSLogger.log(MCSLogger.eWarning, TAG, "Fail to connect to device, PeerDevice is null");
+            return false;
+        }
+
+        MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "Connecting to device " + device.toString());
+        return m_client.connect(device, IClientNotification.EProtocolType.ePT_WL, -1);
+    }
+
+    /**
+     * Setup the client wrapper, which acts as the main receiver for WebLinkClientCore notifications.
+     * This allows multiple UI classes register/unregister the notifications they care about.
+     * @param context Application context
+     * @param properties WebLinkClient properties, e.g. WiFi AP settings
+     */
 
     WebLinkClient(final Context context, final Map<String, String> properties) {
         MCSLogger.log(TAG, "Constructor");
@@ -167,7 +187,6 @@ class WebLinkClient implements IClientNotification,
         myIdentity.setApplication("WebLink Android Reference Client");
         myIdentity.setApplicationVendor("com.abaltatech");
         String versionName;
-
         final PackageManager packageManager = context.getPackageManager();
         if (packageManager != null) {
             try {
@@ -178,8 +197,8 @@ class WebLinkClient implements IClientNotification,
             }
             myIdentity.setAppVersion(versionName);
         }
-        myIdentity.setCountryCodes("us");
-        myIdentity.setDisplayNameMultiLanguage("{\"en\":\"" + android.os.Build.DISPLAY + "\"}");
+        myIdentity.setCountryCodes( "us" );
+        myIdentity.setDisplayNameMultiLanguage( "{\"en\":\"" + android.os.Build.DISPLAY + "\"}" );
         myIdentity.setOs("Android");
         myIdentity.setOsVersion(String.valueOf(android.os.Build.VERSION.SDK_INT));
         myIdentity.setSerialNumber(Build.SERIAL);
@@ -198,7 +217,7 @@ class WebLinkClient implements IClientNotification,
         m_consumerController = new HIDController_USB(m_consumerControlHID);
         m_consumerController.setCapabilities(EHIDCapability.CAP_CONSUMER);
         //Predefine the consumer controls that the platform supports.
-        m_consumerController.setSupportedConsumerControls(PREDEFINED_CONSUMER_CONTROLS, PREDEFINED_CONSUMER_CONTROLS.length, 2);
+        m_consumerController.setSupportedConsumerControls( PREDEFINED_CONSUMER_CONTROLS, PREDEFINED_CONSUMER_CONTROLS.length, 2 );
 
         m_tcpController = new HIDController_TCPIP(); //this is demo only.
 
@@ -237,7 +256,6 @@ class WebLinkClient implements IClientNotification,
                 super.onPingResponseTimeout(); //Always call super for this function.
                 MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseTimeout called!");
                 //the communication is blocked!  do your own connection shutdown / stopping to reset!
-
                 if (m_pingHandler != null) {
                     m_pingHandler.onPingResponseTimeout();
                 }
@@ -247,8 +265,8 @@ class WebLinkClient implements IClientNotification,
             protected void onPingResponseReceived(boolean isSenderInactive) {
                 MCSLogger.log(TAG, "onPingResponseReceived, isSenderInactive: " + isSenderInactive);
                 super.onPingResponseReceived(isSenderInactive);//Always call super for this function.
-                MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseReceived "+isSenderInactive);
-                if (isSenderInactive) {
+                //MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseReceived "+isSenderInactive);
+                if(isSenderInactive) {
                     //Do your own restart of the connection here! (if not auto-reconfiguring).
                 }
 
@@ -267,82 +285,56 @@ class WebLinkClient implements IClientNotification,
         m_serviceClient = new ServiceClient();
         m_services = new Services();
 
-        //setupAudio();
+        setupAudio();
     }
 
-    @Override
-    public void onConnectionStateChanged(WLConnectionManager manager, IMCSDataLayer dataLayer) {
-        boolean wasConnected = m_isConnected;
-        m_isConnected = m_wlConnectionManager.isConnected();
-        MCSLogger.log(TAG, "onConnectionStateChanged(): isConnected=" + m_isConnected);
-
-        if (!manager.isPartialConnected() && !manager.isConnected()) {
-            // TODO: Notify app about onConnectionStateChanged changed if needed
+    public void setupAudio() {
+        MCSLogger.log(TAG, "setupAudio");
+        AudioConfigFileParser parser = null;
+        InputStream is;
+        try {
+            is = m_context.getAssets().open("AudioChannelsConfig.ini");
+            parser = new AudioConfigFileParser(is);
+        } catch (IOException e) {
+            MCSLogger.log(MCSLogger.ELogType.eError, TAG, "Failed to load default configuration file!", e);
+            return;
         }
-        if (!wasConnected && m_isConnected) {
-            if (BuildConfig.DEBUG) {
-                m_numberOfConnects++;
-                MCSLogger.log(TAG, "[ConnectivityTesting] Connect    number[" + m_numberOfConnects + "]");
-            }
-            if (dataLayer instanceof AOALayer) {
-                m_aoaLayer = (AOALayer) dataLayer;
-                //detect when the data layer is closed to remove it.
-                m_aoaLayer.registerCloseNotification(new IMCSConnectionClosedNotification() {
-                    @Override
-                    public void onConnectionClosed(IMCSDataLayer connection) {
-                        connection.unregisterCloseNotification(this);
-                        m_aoaLayer = null;
+
+        try {
+            if (parser != null) {
+                parser.parse();
+                for (WLAudioChannelMapping mapping : parser.m_channels) {
+                    IAudioDecoder decoder = new AudioDecoder_MediaCodec();
+                    IAudioOutput output = new AudioOutput();
+                    decoder.setAudioOutput(output);
+
+                    final String audioType = m_sharedPref.getAudioType();
+                    if (!audioType.isEmpty()) {
+                        List<Integer> audioTypes = new ArrayList<Integer>();
+                        audioTypes.add(Integer.parseInt(audioType));
+                        mapping.setAudioTypes(audioTypes);
                     }
-                });
+
+                    m_client.addAudioChannel(mapping, decoder);
+                }
             }
-            m_client.onConnectionEstablished(manager);
-            // TODO: Notify app about onConnectionStateChanged changed if needed
-            EventLogger.logEventStart(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
-        } else if (wasConnected && !m_isConnected) {
-            if (BuildConfig.DEBUG) {
-                MCSLogger.log(TAG, "[ConnectivityTesting] Disconnect number[" + m_numberOfConnects + "]");
-            }
-            m_client.onConnectionClosed(manager);
-            // TODO: Notify app about onConnectionStateChanged changed if needed
-            EventLogger.logEventEnd(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
-        } else {
-            MCSLogger.log(TAG, "onConnectionStateChanged: Other event");
-            String lastActiveScenario = manager.getActiveScenarioID();
-            if (lastActiveScenario == null) {
-                return;
-            }
-            String lastScenarioID = m_lastScenarioID;
-            if (lastScenarioID != null && !lastScenarioID.equals(lastActiveScenario)) {
-                MCSLogger.log(TAG, "Active Scenario is changed: " + lastScenarioID + " >> " + lastActiveScenario);
-            }
-            // TODO: Notify app about onConnectionStateChanged if needed
+        } catch (Exception e) {
+            MCSLogger.printStackTrace(TAG,e);
         }
-        m_lastScenarioID = manager.getActiveScenarioID();
     }
 
-    public WebLinkClientCore getWebLinkClientCore() {
-        return m_client;
+    void startAudio() {
+        m_client.startAudio(0);
     }
 
-    public boolean onConnectionAttempt(PeerDevice device) {
-        if (device == null) {
-            MCSLogger.log(MCSLogger.eWarning, TAG, "Fail to connect to device, PeerDevice is null");
-            return false;
-        }
-
-        MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "Connecting to device " + device.toString());
-        return m_client.connect(device, IClientNotification.EProtocolType.ePT_WL, -1);
-    }
-
-    public void terminate() {
-        return;
+    void stopAudio() {
+        m_client.stopAudio(0);
     }
 
     /**
      * Create a custom configuration for the WEBLINK connection manager, which can be passed to
      * the client core to override the default internal version.
-     *
-     * @param context    android context
+     * @param context android context
      * @param properties settings for the connection manager
      * @return the default connection manager.
      */
@@ -402,105 +394,258 @@ class WebLinkClient implements IClientNotification,
         registerMethod(connectionMethodSocket);
         m_connectionMethodSocket = connectionMethodSocket;
 
+        // Prepare WiFi AP if Android version is 8 or above
+        boolean isWiFiPrepared = tryPrepareWiFiAP(true);
+
+        // Add your custom connection methods.
+        //registerMethod(new CustomConnectionMethod(context));
+
         m_connectionManager.setSerializer(new WLSerializer(context, "ConnectionManager"));
+        if (!isWiFiPrepared) {
+            m_connectionManager.init();
+        }
     }
 
-    private void registerMethod(ConnectionMethod method) {
-        if (method != null) {
-            MCSLogger.log(TAG, "registerMethod(): " + method.getConnectionMethodID());
-            m_connectionManager.registerConnectionMethod(method);
+    public boolean tryPrepareWiFiAP(boolean onAppStart) {
+        MCSLogger.log(MCSLogger.eDebug, TAG, "tryPrepareWiFiAP");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (m_sharedPref.isWiFiApEnabled()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (ActivityCompat.checkSelfPermission(m_context, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED) {
+                            prepareWiFiAP(m_context, m_properties);
+                        }
+                    }
+                } else if (ActivityCompat.checkSelfPermission(m_context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    prepareWiFiAP(m_context, m_properties);
+                }
+            } else {
+                if (onAppStart) {
+                    MCSLogger.log(MCSLogger.eDebug, TAG, "Skipping creating of WiFi AP connectivity");
+                } else {
+                    MCSLogger.log(MCSLogger.eDebug, TAG, "Disconnecting and destroying WiFi AP");
+                    for (PeerDevice connectedDevice : m_connectedDevices) {
+                        m_connectionManager.disconnectDevice(connectedDevice);
+                    }
+                    m_connectionManager.unregisterConnectionMethod(m_btConnectionMethod);
+                    m_controlHandlerAP.destroyAP();
+                }
+                return false;
+            }
+        } else {
+            MCSLogger.log(MCSLogger.eDebug, TAG, "Skipping creating of WiFi AP connectivity, Android version: " + Build.VERSION.CODENAME);
+            return false;
+        }
+        return true;
+    }
 
-            String id = method.getConnectionMethodID();
-            ConnectionScenario connScenario = new ConnectionScenario(method.getPriority(), id, m_connectionManager);
-            connScenario.addNextStepConnectionMethod(id);
-            m_connectionManager.addScenario(connScenario);
+    /**
+     * Prepares the Wi-Fi AP connectivity
+     *
+     * @param properties settings for the AP connectivity
+     */
+    private void prepareWiFiAP(final Context context, final Map<String, String> properties) {
+        MCSLogger.log(TAG, "prepareWiFiAP");
+        // Note that the permissions have to be granted in order to start WiFi AP
+        try {
+            MCSLogger.log(MCSLogger.eDebug, TAG, "prepare WiFi AP");
+            m_connectionManager.terminate();
 
-            WLScenarioConnection scenarioConnection = new WLScenarioConnection(connScenario, id, id);
+            // Prepare BT connection method
+            if (m_btConnectionMethod == null) {
+                prepareBTConnectionMethod(properties);
+            }
+
+
+            // Prepare Socket connection method
+            ConnectionMethod connMethodSocket = new AndroidSocketConnectionMethod(12345, WLTypes.SERVER_DEFAULT_BROADCAST_PORT);
+            connMethodSocket.setPriority(SOCKET_PRIORITY);
+
+            // Register AP callbacks with ConnectionManager
+            m_controlHandlerAP.setContext(context);
+            m_controlHandlerAP.start();
+            m_controlHandlerAP.registerAPCallback(new IWiFiControlHandlerCallbackAP() {
+                @Override
+                public void onAPRequest() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+
+                @Override
+                public void onAPCreated() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+
+                @Override
+                public void onAPCreationFailed() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+
+                @Override
+                public void onAPDestroyed() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+
+                @Override
+                public void onAPSelected() {}
+
+                @Override
+                public void onAPDisabled() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+
+                @Override
+                public void onAPConnectionTimeout() {
+                    // Do nothing for now
+                    // We could show a message
+                }
+            });
+
+            APSettingsProvider apSettingsProvider = createAPSettingsProvider(properties);
+            m_connectionScenarioAP = new ConnectionScenario_WiFiAP(
+                    WIFI_AP_PRIORITY,
+                    ConnectionScenario_WiFiAP.ID,
+                    m_connectionManager,
+                    apSettingsProvider);
+            m_connectionScenarioAP.addNextStepConnectionMethod(m_btConnectionMethod.getConnectionMethodID());
+            m_connectionScenarioAP.addNextStepConnectionMethod(connMethodSocket.getConnectionMethodID());
+            m_connectionManager.registerConnectionMethod(m_btConnectionMethod);
+            m_connectionManager.registerConnectionMethod(connMethodSocket);
+            m_connectionManager.addScenario(m_connectionScenarioAP);
+
+            // Register with WLConnectionManager
+            // WLScenarioConnection_WiFiAP scenarioConnection = new WLScenarioConnection_WiFiAP(scenario, socketConnectionMethod.getConnectionMethodID(), socketConnectionMethod.getConnectionMethodID(), m_connectionManager, serverPort, m_context, apSettingsProvider);
+            WLScenarioConnection_WiFiAP scenarioConnection = new WLScenarioConnection_WiFiAP(
+                    m_connectionScenarioAP,
+                    connMethodSocket.getConnectionMethodID(),
+                    connMethodSocket.getConnectionMethodID(),
+                    m_btConnectionMethod.getConnectionMethodID(),
+                    m_connectionManager,
+                    (short) 12345,
+                    m_context,
+                    apSettingsProvider);
             m_wlConnectionManager.addScenarioConnection(scenarioConnection);
+
+            // Start the local-only hotspot
+            m_controlHandlerAP.createAP();
+
+            m_connectionManager.init();
+
+            MCSLogger.log(TAG, "prepareWiFiAP() end");
+        } catch (Exception e) {
+            MCSLogger.log(MCSLogger.ELogType.eError, TAG, "Failed to start WiFi AP!", e);
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    Toast.makeText(context, R.string.wifiap_failed_to_start, Toast.LENGTH_LONG).show();
+                }
+            });
         }
     }
 
-    private final IHIDUSBConnection m_consumerControlHID = new IHIDUSBConnection() {
-        @Override
-        public boolean prepare(IHIDController controller) {
-            //TODO prepare the native platform references
-            MCSLogger.log(TAG, "prepare: " + controller);
-            return true; //for now is a placeholder.  returning false here will prevent this controller from activating.
-        }
+    private APSettingsProvider createAPSettingsProvider(Map<String, String> properties) {
+        MCSLogger.log(TAG, "createAPSettingsProvider");
+        APSettingsProvider provider = new APSettingsProvider(false);
 
-        @Override
-        public boolean release(IHIDController controller) {
-            //TODO free up native platform references (if required)
-            MCSLogger.log(TAG, "release: " + controller);
-            return false; //for now is a placeholder.
-        }
+        // Client app can create AP but it cannot join AP
+        provider.setLocalCapabilities(new APCapabilities(true, false));
+        m_canCreateAP = true;
 
-        @Override
-        public boolean isAvailable(IHIDController controller) {
-            //TODO query the native platform's device state to see if connection.
-            return m_client.isConnected(); //for now is a placeholder.
-        }
+        // Host app can join AP but it cannot create AP
+        provider.setRemoteCapabilities(new APCapabilities(false, true));
 
-        @Override
-        public boolean startHIDDescriptor(int deviceId, EHIDCapability capability, byte[] descriptorData, int descriptorLength) {
-            //TODO do native platform's actions to start a HID descriptor.
-            // The platform may want to declare the USB HID report descriptor at start of the USB setup. In that case this value can be ignored.
-            MCSLogger.log(TAG, "[HID CC]startHIDDescriptor: " + deviceId + "cap=" + capability + " d=" + Arrays.toString(descriptorData));
-            return m_client.isConnected(); //TODO - return the actual state.
-        }
+        return provider;
+    }
 
-        @Override
-        public boolean stopHIDDescriptor(int deviceId, EHIDCapability capability) {
-            //TODO do native platform's actions to stop a HID descriptor (if required).
-            MCSLogger.log(TAG, "[HID CC]stopHIDDescriptor: " + deviceId + "cap=" + capability);
-            return m_client.isConnected(); //TODO - return the actual result.
-        }
+    /**
+     * Access the weblink client core object.
+     * @return
+     */
+    public WebLinkClientCore getWLClientCore() {
+        return m_client;
+    }
 
-        @Override
-        public boolean sendHIDReport(int deviceId, EHIDCapability capability, byte[] reportData, int reportLength) {
-            //TODO do native platform's actions to send a HID input report.
-            MCSLogger.log(TAG, "[HID CC]sendHIDReport: " + deviceId + "cap=" + capability + " d=" + Arrays.toString(reportData));
-            return m_client.isConnected();
-        }
-    };
-    private final IUSBDeviceConnection m_usbDeviceConnection = new IUSBDeviceConnection() {
-        @Override
-        public boolean prepare(IHIDController controller) {
-            // we are prepared if the aoaLayer is not-null!
-            return m_aoaLayer != null;
-        }
+    /**
+     * Set the client notification listener.
+     * @param listener the listener, or null to remove.
+     */
+    public void setClientListener(IClientNotification listener) {
+        m_listener = listener;
+    }
 
-        @Override
-        public boolean release(IHIDController controller) {
-            //TODO free up native platform references (if needed)
-            return true;
-        }
-
-        @Override
-        public boolean isAvailable(IHIDController controller) {
-            return m_aoaLayer != null;
-        }
-
-        @Override
-        public boolean sendControlTransfer(int requestType, int requestId, int value, byte[] payload, int payloadLength, int timeOutMs) {
-            if (m_aoaLayer != null) {
-                return m_aoaLayer.sendControlTransfer(requestType, requestId, value, payload, payloadLength, timeOutMs);
+    /**
+     * add the listener from the list of listeners to connection updates.
+     * @param listener
+     */
+    public void registerConnectionListener(IConnectionStatusNotification listener) {
+        MCSLogger.log(TAG, "registerConnectionListener");
+        synchronized (m_connListeners) {
+            if(!m_connListeners.contains(listener)) {
+                m_connListeners.add(listener);
             }
-            return false;
         }
+    }
 
-        @Override
-        public boolean sendControlTransfer(int requestType, int requestId, int value, int index, int timeOutMs) {
-            if (m_aoaLayer != null) {
-                return m_aoaLayer.sendControlTransfer(requestType, requestId, value, index, timeOutMs);
+    /**
+     * Remove the listener from the list of listeners to connection updates.
+     * @param listener
+     */
+    public void unregisterConnectionListener(IConnectionStatusNotification listener) {
+        MCSLogger.log(TAG, "unregisterConnectionListener");
+        synchronized (m_connListeners) {
+            m_connListeners.remove(listener);
+        }
+    }
+
+    /**
+     * add the listener from the list of listeners to server list updates.
+     * @param listener
+     */
+    public void registerServerUpdateListener(IServerUpdateNotification listener) {
+        MCSLogger.log(TAG, "registerServerUpdateListener");
+        synchronized (m_serverListeners) {
+            if(!m_serverListeners.contains(listener)) {
+                m_serverListeners.add(listener);
             }
-            return false;
         }
-    };
+    }
 
+    /**
+     * Remove the listener from the list of listeners to server list updates.
+     * @param listener
+     */
+    public void unregisterServerUpdateListener(IServerUpdateNotification listener) {
+        MCSLogger.log(TAG, "unregisterServerUpdateListener");
+        synchronized (m_serverListeners) {
+            m_serverListeners.remove(listener);
+        }
+    }
+    /**
+     * Get the service client.
+     */
+    public ServiceClient getServiceClient() {
+        return m_serviceClient;
+    }
+
+    /**
+     * Get the service object.
+     */
+    public Services getServices() {
+        return m_services;
+    }
+
+    ///
+
+    /**
+     * HID USB Connection is used with the HIDController_USB.  This is used to bridge to the native
+     * platform's iOS support.
+     */
     private final IHIDUSBConnection m_hidUSBConnection = new IHIDUSBConnection() {
         private IMCSDataLayer m_dataLayer;
-
         @Override
         public boolean prepare(IHIDController controller) {
             MCSLogger.log(TAG, "IHIDUSBConnection prepare");
@@ -551,41 +696,131 @@ class WebLinkClient implements IClientNotification,
         public boolean sendHIDReport(int deviceId, EHIDCapability capability, byte[] reportData, int reportLength) {
             //TODO do native platform's actions to send a HID input report.
             MCSLogger.log(TAG, "[HID USB]sendHIDReport: " + deviceId + "cap=" + capability + " d=" + Arrays.toString(reportData));
-            TCPIPHIDUtils.getInstance().sendBufferEvent(reportData, reportLength);
+            TCPIPHIDUtils.getInstance().sendBufferEvent(reportData,reportLength);
             return m_dataLayer != null; //for now is a placeholder.
         }
     };
 
-    public boolean isConnected() {
-        return m_isConnected;
-    }
+    /**
+     * USB Device Connection is used with the HIDController_AOA to check the current state
+     */
+    private final IUSBDeviceConnection m_usbDeviceConnection = new IUSBDeviceConnection() {
+        @Override
+        public boolean prepare(IHIDController controller) {
+            // we are prepared if the aoaLayer is not-null!
+            return m_aoaLayer != null;
+        }
+
+        @Override
+        public boolean release(IHIDController controller) {
+            //TODO free up native platform references (if needed)
+            return true;
+        }
+
+        @Override
+        public boolean isAvailable(IHIDController controller) {
+            return m_aoaLayer != null;
+        }
+
+        @Override
+        public boolean sendControlTransfer(int requestType, int requestId, int value, byte[] payload, int payloadLength, int timeOutMs) {
+            if(m_aoaLayer != null) {
+                return m_aoaLayer.sendControlTransfer(requestType, requestId, value, payload, payloadLength, timeOutMs);
+            }
+            return false;
+        }
+
+        @Override
+        public boolean sendControlTransfer(int requestType, int requestId, int value, int index, int timeOutMs) {
+            if(m_aoaLayer != null) {
+                return m_aoaLayer.sendControlTransfer(requestType, requestId, value, index, timeOutMs);
+            }
+            return false;
+        }
+    };
+
+    /**
+     * HID USB Connection is used with the HIDController_USB.  This is used to bridge to the native
+     * platform's interface for Consumer Control actions.
+     */
+    private final IHIDUSBConnection m_consumerControlHID = new IHIDUSBConnection() {
+        @Override
+        public boolean prepare(IHIDController controller) {
+            //TODO prepare the native platform references
+            MCSLogger.log(TAG, "prepare: " + controller);
+            return true; //for now is a placeholder.  returning false here will prevent this controller from activating.
+        }
+
+        @Override
+        public boolean release(IHIDController controller) {
+            //TODO free up native platform references (if required)
+            MCSLogger.log(TAG, "release: " + controller);
+            return false; //for now is a placeholder.
+        }
+
+        @Override
+        public boolean isAvailable(IHIDController controller) {
+            //TODO query the native platform's device state to see if connection.
+            return m_client.isConnected(); //for now is a placeholder.
+        }
+
+        @Override
+        public boolean startHIDDescriptor(int deviceId, EHIDCapability capability, byte[] descriptorData, int descriptorLength) {
+            //TODO do native platform's actions to start a HID descriptor.
+            // The platform may want to declare the USB HID report descriptor at start of the USB setup. In that case this value can be ignored.
+            MCSLogger.log(TAG, "[HID CC]startHIDDescriptor: " + deviceId + "cap=" + capability + " d=" + Arrays.toString(descriptorData));
+            return m_client.isConnected(); //TODO - return the actual state.
+        }
+
+        @Override
+        public boolean stopHIDDescriptor(int deviceId, EHIDCapability capability) {
+            //TODO do native platform's actions to stop a HID descriptor (if required).
+            MCSLogger.log(TAG, "[HID CC]stopHIDDescriptor: " + deviceId + "cap=" + capability);
+            return m_client.isConnected(); //TODO - return the actual result.
+        }
+
+        @Override
+        public boolean sendHIDReport(int deviceId, EHIDCapability capability, byte[] reportData, int reportLength) {
+            //TODO do native platform's actions to send a HID input report.
+            MCSLogger.log(TAG, "[HID CC]sendHIDReport: " + deviceId + "cap=" + capability + " d=" + Arrays.toString(reportData));
+            return m_client.isConnected();
+        }
+    };
+
+    ///
 
     @Override
     public void onServerListUpdated(ServerInfo[] servers) {
-
-    }
-
-    @Override
-    public void onConnectionEstablished(PeerDevice peerDevice) {
-        MCSLogger.log(eInfo, TAG, "Connection established with " + peerDevice.getName());
-        if (m_listener != null) {
-            m_listener.onConnectionEstablished(peerDevice);
+        if(m_listener != null) {
+            m_listener.onServerListUpdated(servers);
         }
-        synchronized (m_connListeners) {
-            for (IConnectionStatusNotification listener : m_connListeners) {
-                listener.onConnectionEstablished(peerDevice);
+        synchronized (m_serverListeners) {
+            for(IServerUpdateNotification listener : m_serverListeners) {
+                listener.onServerListUpdated(servers);
             }
         }
     }
 
     @Override
+    public void onConnectionEstablished(PeerDevice peerDevice) {
+        if(m_listener != null) {
+            m_listener.onConnectionEstablished(peerDevice);
+        }
+        synchronized (m_connListeners) {
+            for(IConnectionStatusNotification listener : m_connListeners) {
+                listener.onConnectionEstablished(peerDevice);
+            }
+        }
+        startAudio();
+    }
+
+    @Override
     public void onConnectionFailed(PeerDevice peerDevice, EConnectionResult result) {
-        MCSLogger.log(eError, TAG, "Connection failed with " + peerDevice.getName() + ". Result: " + result);
-        if (m_listener != null) {
+        if(m_listener != null) {
             m_listener.onConnectionFailed(peerDevice, result);
         }
         synchronized (m_connListeners) {
-            for (IConnectionStatusNotification listener : m_connListeners) {
+            for(IConnectionStatusNotification listener : m_connListeners) {
                 listener.onConnectionFailed(peerDevice, result);
             }
         }
@@ -593,55 +828,69 @@ class WebLinkClient implements IClientNotification,
 
     @Override
     public void onConnectionClosed(PeerDevice peerDevice) {
-        MCSLogger.log(eInfo, TAG, "Connection closed with " + peerDevice.getName());
-        if (m_listener != null) {
+        if(m_listener != null) {
             m_listener.onConnectionClosed(peerDevice);
         }
         synchronized (m_connListeners) {
-            for (IConnectionStatusNotification listener : m_connListeners) {
+            for(IConnectionStatusNotification listener : m_connListeners) {
                 listener.onConnectionClosed(peerDevice);
             }
         }
+        stopAudio();
     }
 
     @Override
-    public void onApplicationChanged(int i) {
-
+    public void onApplicationChanged(int appID) {
+        if(m_listener != null) {
+            m_listener.onApplicationChanged(appID);
+        }
     }
 
     @Override
     public void onFrameRendered() {
-
+        if(m_listener != null) {
+            m_listener.onFrameRendered();
+        }
     }
 
     @Override
     public boolean canProcessFrame() {
-        return false;
+        if(m_listener != null) {
+            return m_listener.canProcessFrame();
+        }
+        return true;
     }
 
     @Override
-    public void onShowKeyboard(short i) {
-
+    public void onShowKeyboard(short type) {
+        if(m_listener != null) {
+            m_listener.onShowKeyboard(type);
+        }
     }
 
     @Override
     public void onHideKeyboard() {
-
+        if(m_listener != null) {
+            m_listener.onHideKeyboard();
+        }
     }
 
     @Override
-    public void onWaitIndicator(boolean b) {
-
+    public void onWaitIndicator(boolean showWaitIndicator) {
+        if(m_listener != null) {
+            m_listener.onWaitIndicator(showWaitIndicator);
+        }
     }
 
     @Override
-    public void onAppImageChanged(int i, Bitmap bitmap) {
-
+    public void onAppImageChanged(int appID, Bitmap image) {
+        if(m_listener != null) {
+            m_listener.onAppImageChanged(appID,image);
+        }
     }
 
     @Override
     public void onConnectionLost() {
-        MCSLogger.log(eInfo, TAG, "Connection  lost");
         if(m_listener != null) {
             m_listener.onConnectionLost();
         }
@@ -649,105 +898,102 @@ class WebLinkClient implements IClientNotification,
 
     @Override
     public void onConnectionResumed() {
-        MCSLogger.log(eInfo, TAG, "Connection  resumed");
         if(m_listener != null) {
             m_listener.onConnectionResumed();
         }
     }
 
+    public boolean isConnected()
+    {
+        return m_isConnected;
+    }
+
     @Override
     public boolean onCommandReceived(Command command) {
-        if (command == null || command.getCommandID() != 0x4C || !command.isValid()) {
-            MCSLogger.log(TAG, "Received invalid or non-ping command");
-            return false;
-        }
-
-        try {
-            MCSLogger.log(TAG, "Received Ping command: " + command.getCommandDataString());
-
-            // Check payload
-            DataBuffer payload = new DataBuffer();
-            boolean hasPayload = command.getPayload(payload);
-            int payloadSize = hasPayload ? payload.getSize() : 0;
-            MCSLogger.log(TAG, "Ping command payload: hasPayload=" + hasPayload + ", size=" + payloadSize);
-
-            short receivedFlags = 0;
-            if (hasPayload && payloadSize >= 2) {
-                receivedFlags = payload.getShort(0);
-                MCSLogger.log(TAG, "Received flags: " + receivedFlags);
-            } else {
-                MCSLogger.log(TAG, "Ping payload missing or too small, assuming default flags");
-            }
-
-            boolean isResponse = (receivedFlags & 0x0001) != 0;
-            boolean isRegularPing = (receivedFlags & 0x0002) != 0;
-            MCSLogger.log(TAG, "Ping details - IsResponse: " + isResponse + ", IsRegularPing: " + isRegularPing);
-
-            if (isResponse) {
-                MCSLogger.log(TAG, "Received ping response, not sending pong");
-                return true; // No need to respond to a response
-            }
-
-            // Prepare pong response with only "Is Response Message" flag
-            byte[] pongPayload = new byte[2];
-            short pongFlags = 0x0001; // Set only "Is Response Message" flag
-            pongPayload[0] = (byte)(pongFlags & 0xFF);
-            pongPayload[1] = (byte)((pongFlags >> 8) & 0xFF);
-
-            Command pongCommand = new Command((short)0x4C, pongPayload, 0, 2);
-
-            IWebLinkConnection conn = m_client.getConnection();
-            if (conn != null) {
-                conn.sendCommand(pongCommand);
-                MCSLogger.log(TAG, "Sent Pong command with flags: " + pongFlags);
-            } else {
-                MCSLogger.log(TAG, "Connection is null, cannot send pong");
-                return false;
-            }
-
-            return true;
-
-        } catch (Exception e) {
-            MCSLogger.log(TAG, "Error handling ping command", e);
-            return false;
-        }
-    }
-
-    @Override
-    public void onAudioChannelStarted(int i) {
-
-    }
-
-    @Override
-    public void onAudioChannelStopped(int i) {
-
-    }
-
-    @Override
-    public boolean onDeviceScanningBegin(String s) {
         return true;
     }
 
     @Override
-    public boolean onDeviceFound(PeerDevice peerDevice) {
-        return false;
-    }
-
-    @Override
-    public void onDeviceLost(PeerDevice peerDevice) {
-        MCSLogger.log(TAG, "onDeviceLost: %s", peerDevice.toString());
-        for (PeerDevice it : m_connectedDevices) {
-            if (it.equals(peerDevice)) {
-                m_connectedDevices.remove(it);
-                m_connectionManager.disconnectDevice(peerDevice);
-                break;
-            }
+    public void onAudioChannelStarted(final int channelID) {
+        if (m_listener != null) {
+            m_listener.onAudioChannelStarted(channelID);
         }
     }
 
     @Override
-    public void onDeviceScanningEnd(String s) {
+    public void onAudioChannelStopped(final int channelID) {
+        if (m_listener != null) {
+            m_listener.onAudioChannelStopped(channelID);
+        }
+    }
 
+    public void setPingHandler(IPingHandler pingHandler) {
+        m_pingHandler = pingHandler;
+    }
+
+    private void registerMethod(ConnectionMethod method) {
+        if(method != null) {
+            MCSLogger.log(TAG, "registerMethod(): " + method.getConnectionMethodID());
+            m_connectionManager.registerConnectionMethod(method);
+
+            String id = method.getConnectionMethodID();
+            ConnectionScenario connScenario = new ConnectionScenario(method.getPriority(), id, m_connectionManager);
+            connScenario.addNextStepConnectionMethod(id);
+            m_connectionManager.addScenario(connScenario);
+
+            WLScenarioConnection scenarioConnection = new WLScenarioConnection(connScenario, id, id);
+            m_wlConnectionManager.addScenarioConnection(scenarioConnection);
+        }
+    }
+
+    @Override
+    public void onConnectionStateChanged(WLConnectionManager manager, IMCSDataLayer dataLayer) {
+        boolean wasConnected = m_isConnected;
+        m_isConnected = m_wlConnectionManager.isConnected();
+        MCSLogger.log(TAG, "onConnectionStateChanged(): isConnected=" + m_isConnected);
+
+        if (!manager.isPartialConnected() && !manager.isConnected()) {
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+        }
+        if (!wasConnected && m_isConnected) {
+            if (BuildConfig.DEBUG) {
+                m_numberOfConnects++;
+                MCSLogger.log(TAG, "[ConnectivityTesting] Connect    number[" + m_numberOfConnects + "]");
+            }
+            if(dataLayer instanceof AOALayer) {
+                m_aoaLayer = (AOALayer) dataLayer;
+                //detect when the data layer is closed to remove it.
+                m_aoaLayer.registerCloseNotification(new IMCSConnectionClosedNotification(){
+                    @Override
+                    public void onConnectionClosed(IMCSDataLayer connection) {
+                        connection.unregisterCloseNotification(this);
+                        m_aoaLayer = null;
+                    }
+                });
+            }
+            m_client.onConnectionEstablished(manager);
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+            EventLogger.logEventStart(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
+        } else if (wasConnected && !m_isConnected) {
+            if (BuildConfig.DEBUG) {
+                MCSLogger.log(TAG, "[ConnectivityTesting] Disconnect number[" + m_numberOfConnects + "]");
+            }
+            m_client.onConnectionClosed(manager);
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+            EventLogger.logEventEnd(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
+        } else {
+            MCSLogger.log(TAG, "onConnectionStateChanged: Other event");
+            String lastActiveScenario = manager.getActiveScenarioID();
+            if(lastActiveScenario == null) {
+                return;
+            }
+            String lastScenarioID = m_lastScenarioID;
+            if (lastScenarioID != null && !lastScenarioID.equals(lastActiveScenario)) {
+                MCSLogger.log(TAG, "Active Scenario is changed: " + lastScenarioID + " >> " + lastActiveScenario);
+            }
+            // TODO: Notify app about onConnectionStateChanged if needed
+        }
+        m_lastScenarioID = manager.getActiveScenarioID();
     }
 
     @Override
@@ -756,4 +1002,96 @@ class WebLinkClient implements IClientNotification,
             m_client.onConnectionPartiallyConnected(connectionManager);
         }
     }
-} 
+
+    /**
+     * Called when the process of scanning has started.
+     *
+     * @param connectionMethodID (to be removed)
+     * @return true if the scanning should continue or false to stop the scanning process.
+     */
+    @Override
+    public boolean onDeviceScanningBegin(String connectionMethodID) {
+        return true;
+    }
+
+    /**
+     * Called when a new device has been found as a result of the scanning process.
+     *
+     * @param device the found device
+     * @return true to continue scanning for more devices or false to stop the scanning process
+     */
+    @Override
+    public boolean onDeviceFound(PeerDevice device) {
+        boolean isAutoConnectEnabled = m_sharedPref.isAutoConnectEnabled();
+        String favoriteDeviceIP = m_sharedPref.getFavoriteDeviceIP();
+        String favoriteDeviceName = m_sharedPref.getFavoriteDeviceName();
+        boolean connectToDevice = isAutoConnectEnabled && favoriteDeviceIP.isEmpty() && favoriteDeviceName.isEmpty()
+                || (isAutoConnectEnabled && !favoriteDeviceIP.isEmpty() && device.getAddress().contains(favoriteDeviceIP))
+                || (isAutoConnectEnabled && !favoriteDeviceName.isEmpty() && device.getName().contains(favoriteDeviceName));
+        if (connectToDevice) {
+            MCSLogger.log(MCSLogger.ELogType.eDebug, TAG,
+                    "onDeviceFound, connectToDevice == true, favoriteDeviceIP: " + favoriteDeviceIP
+                            + " favoriteDeviceName: " + favoriteDeviceName
+                            + "device: " + device.toString());
+            boolean connected = m_client.connect(device);
+            MCSLogger.log(MCSLogger.ELogType.eDebug, TAG,
+                    "onDeviceFound: %s = %b", device.toString(), connected);
+            if (connected) {
+                MCSLogger.log(MCSLogger.ELogType.eDebug, TAG,
+                        "onDeviceFound connected: " + device.toString());
+                m_connectedDevices.add(device);
+            }
+        } else {
+            MCSLogger.log(MCSLogger.ELogType.eDebug, TAG,
+                    "onDeviceFound, connectToDevice == false, favoriteDeviceIP: " + favoriteDeviceIP
+                            + " favoriteDeviceName: " + favoriteDeviceName
+                            + "device: " + device.toString());
+        }
+        return true;
+    }
+
+    /**
+     * Called when a device is no longer available.
+     *
+     * @param device the device that has been lost
+     */
+    @Override
+    public void onDeviceLost(PeerDevice device) {
+        MCSLogger.log(TAG, "onDeviceLost: %s", device.toString());
+        for (PeerDevice it : m_connectedDevices) {
+            if (it.equals(device)) {
+                m_connectedDevices.remove(it);
+                m_connectionManager.disconnectDevice(device);
+                break;
+            }
+        }
+    }
+
+    /**
+     * Called when the scanning process is complete.
+     *
+     * @param connectionMethodID (to be removed)
+     */
+    @Override
+    public void onDeviceScanningEnd(String connectionMethodID) {
+        // Do nothing
+    }
+
+    /**
+     * Returns WebLink Client's capability to create WiFi AP.
+     * This is controlled by the properties passed to the constructor.
+     *
+     * @return WebLink Client's capability to create WiFi AP
+     */
+    public boolean canCreateAP() {
+        return m_canCreateAP;
+    }
+
+    private void prepareBTConnectionMethod(final Map<String, String> properties) {
+        String listenUUIDString = properties.get(WLConstants.PROP_BT_SERVICE_LISTEN_UUID);
+        String connectUUIDString = properties.get(WLConstants.PROP_BT_SERVICE_CONNECT_UUID);
+        UUID listenUUID = UUID.fromString(listenUUIDString);
+        UUID connectUUID = UUID.fromString(connectUUIDString);
+        m_btConnectionMethod = new BluetoothConnectionMethod(m_context, listenUUID, connectUUID);
+    }
+}

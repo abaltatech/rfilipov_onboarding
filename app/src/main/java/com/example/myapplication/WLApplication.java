@@ -25,7 +25,7 @@ public class WLApplication extends Application {
     }
 
     public WebLinkClientCore getWebLinkClientCore() {
-        return m_wlClient.getWebLinkClientCore();
+        return m_wlClient.getWLClientCore();
     }
 
     public WebLinkClient getWebLinkClient(){
@@ -43,7 +43,6 @@ public class WLApplication extends Application {
 
     public void terminate() {
         if (m_wlClient != null) {
-            m_wlClient.terminate();
             m_wlClient = null;
         }
     }
