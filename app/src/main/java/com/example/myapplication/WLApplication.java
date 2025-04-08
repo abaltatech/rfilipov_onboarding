@@ -11,6 +11,7 @@ import com.abaltatech.mcs.connectionmanager.PeerDevice;
 import com.abaltatech.mcs.logger.MCSLogger;
 import com.abaltatech.mcs.logger.android.LoggerAndroid;
 import com.abaltatech.weblink.core.WLTypes;
+import com.abaltatech.weblinkclient.IClientNotification;
 import com.abaltatech.weblinkclient.WebLinkClientCore;
 
 import java.util.HashMap;

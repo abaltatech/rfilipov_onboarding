@@ -66,8 +66,9 @@ public class MainActivity extends AppCompatActivity {
         MCSLogger.log(eWarning, TAG, "This is an Warning message");
         MCSLogger.log(eError, TAG, "This is an Error message");
 
-        final WebLinkClientCore wlClient
-                = WLApplication.getInstance().getWebLinkClientCore();
+
+        final WebLinkClient client = WLApplication.getInstance().getWebLinkClient();
+        final WebLinkClientCore wlClient = client.getWebLinkClientCore();
 
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         Display display = windowManager.getDefaultDisplay();
@@ -98,6 +99,19 @@ public class MainActivity extends AppCompatActivity {
                 clientWidth, clientHeight,
                 clientFeatures, clientFeaturesString
         );
+
+        String Address = "10.40.3.54:12345";
+        PeerDevice device = new PeerDevice("Alice", "Socket", Address);
+        if (client.connectToDevice(device)){
+            MCSLogger.log(eInfo, TAG, "********************Connection Established*******************");
+        }
+
+        else{
+            MCSLogger.log(eInfo, TAG, "********************Connection Failed TO Be Established********************");
+
+        }
+
+
     }
 }
 
