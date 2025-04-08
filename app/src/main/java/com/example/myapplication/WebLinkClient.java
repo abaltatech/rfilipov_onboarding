@@ -97,13 +97,17 @@ public class WebLinkClient implements IClientNotification,
     private WLConnectionManager m_wlConnectionManager;
     private DeviceIdentity m_deviceIdentity;
     private HIDInputManager m_inputManager;
+    private IClientNotification m_listener = null;
+    private final List<IConnectionStatusNotification> m_connListeners = new ArrayList<IConnectionStatusNotification>();
+    private final List<IServerUpdateNotification> m_serverListeners = new ArrayList<IServerUpdateNotification>();
+    private AOALayer m_aoaLayer;
 
 
     WebLinkClient(Context context, Map<String, String> properties){
+
         initDeviceIdentity();
 
         m_inputManager = new HIDInputManager(context);
-
         HIDController_TCPIP m_tcpController = new HIDController_TCPIP();
         m_inputManager.registerHIDController(m_tcpController);
 
@@ -174,18 +178,6 @@ public class WebLinkClient implements IClientNotification,
         return m_clientCore;
     }
 
-    @Override
-    public void onServerListUpdated(ServerInfo[] serverInfos) {
-        var info = serverInfos[0]; // TODO: fix
-        if (m_clientCore.connect(info.m_peerDevice, IClientNotification.EProtocolType.ePT_WL, -1)) {
-            // Request accepted. Wait for either onConnectionEstablished or onConnectionFailed notifications
-            // before proceeding.
-        } else {
-            // The request was not accepted. Probably an invalid ServerInfo.
-            MCSLogger.log(MCSLogger.ELogType.eError, "The connect request to a peer was not accepted. Probably an invalid ServerInfo.");
-        }
-    }
-
     public boolean connectToDevice(PeerDevice device)
     {
         if (device == null) {
@@ -197,126 +189,321 @@ public class WebLinkClient implements IClientNotification,
         return getWebLinkClientCore().connect(device, IClientNotification.EProtocolType.ePT_WL, -1);
     }
 
+    /**
+     * add the listener from the list of listeners to server list updates.
+     *
+     * @param listener
+     */
+    public void registerServerUpdateListener(IServerUpdateNotification listener) {
+        synchronized (m_serverListeners) {
+            if (!m_serverListeners.contains(listener)) {
+                m_serverListeners.add(listener);
+            }
+        }
+    }
+
+
+    /**
+     * add the listener from the list of listeners to connection updates.
+     *
+     * @param listener
+     */
+    public void registerConnectionListener(IConnectionStatusNotification listener) {
+        synchronized (m_connListeners) {
+            if (!m_connListeners.contains(listener)) {
+                m_connListeners.add(listener);
+            }
+        }
+    }
+
+    /**
+     * Remove the listener from the list of listeners to connection updates.
+     *
+     * @param listener
+     */
+    public void unregisterConnectionListener(IConnectionStatusNotification listener) {
+        synchronized (m_connListeners) {
+            m_connListeners.remove(listener);
+        }
+    }
+
+    public void unregisterServerUpdate(IServerUpdateNotification listener) {
+        synchronized (m_serverListeners) {
+            m_serverListeners.remove(listener);
+        }
+    }
+
+    /**
+     * @param servers
+     */
+    @Override
+    public void onServerListUpdated(ServerInfo[] servers) {
+        for (ServerInfo server : servers) {
+            MCSLogger.log(TAG, "Server: " + server.toString());
+        }
+
+        if (m_listener != null) {
+            m_listener.onServerListUpdated(servers);
+        }
+
+        synchronized (m_serverListeners) {
+            for (IServerUpdateNotification listener : m_serverListeners) {
+                listener.onServerListUpdated(servers);
+            }
+        }
+    }
+
+    /**
+     * @param peerDevice
+     */
     @Override
     public void onConnectionEstablished(PeerDevice peerDevice) {
+        MCSLogger.log(TAG, "onConnectionEstablished(): ");
+
+        if (m_listener != null) {
+            m_listener.onConnectionEstablished(peerDevice);
+        }
+
+        synchronized (m_connListeners) {
+            for (IConnectionStatusNotification listener : m_connListeners) {
+                listener.onConnectionEstablished(peerDevice);
+            }
+        }
+
+        //startAudio() ??
 
     }
 
+    /**
+     * @param peerDevice
+     * @param eConnectionResult
+     */
     @Override
     public void onConnectionFailed(PeerDevice peerDevice, EConnectionResult eConnectionResult) {
-
+        MCSLogger.log(TAG, "onConnectionFailed(): ");
     }
 
+    /**
+     * @param peerDevice
+     */
     @Override
     public void onConnectionClosed(PeerDevice peerDevice) {
-
+        MCSLogger.log(TAG, "onConnectionClosed(): ");
+        if (m_listener != null) {
+            m_listener.onConnectionClosed(peerDevice);
+        }
     }
 
+    /**
+     * @param appId
+     */
     @Override
-    public void onApplicationChanged(int i) {
-
+    public void onApplicationChanged(int appId) {
+        if (m_listener != null) {
+            m_listener.onApplicationChanged(appId);
+        }
     }
 
+    /**
+     *
+     */
     @Override
     public void onFrameRendered() {
-
+        if (m_listener != null) {
+            m_listener.onFrameRendered();
+        }
     }
 
+    /**
+     * @return
+     */
     @Override
     public boolean canProcessFrame() {
-        return false;
+        if (m_listener != null) {
+            return m_listener.canProcessFrame();
+        }
+        return true;
     }
 
+    /**
+     * @param i
+     */
     @Override
     public void onShowKeyboard(short i) {
 
     }
 
+    /**
+     *
+     */
     @Override
     public void onHideKeyboard() {
 
     }
 
+    /**
+     * @param isLoading
+     */
     @Override
-    public void onWaitIndicator(boolean b) {
-
+    public void onWaitIndicator(boolean isLoading) {
+        if (m_listener != null) {
+            m_listener.onWaitIndicator(isLoading);
+        }
     }
 
+    /**
+     * @param appId
+     * @param bitmap
+     */
     @Override
-    public void onAppImageChanged(int i, Bitmap bitmap) {
-
+    public void onAppImageChanged(int appId, Bitmap bitmap) {
+        if (m_listener != null) {
+            m_listener.onAppImageChanged(appId, bitmap);
+        }
     }
 
+    /**
+     *
+     */
     @Override
     public void onConnectionLost() {
 
     }
 
+    /**
+     *
+     */
     @Override
     public void onConnectionResumed() {
 
     }
 
+    /**
+     * @param command
+     * @return
+     */
     @Override
     public boolean onCommandReceived(Command command) {
-        return false;
+        return true;
     }
 
+    /**
+     * @param i
+     */
     @Override
     public void onAudioChannelStarted(int i) {
 
     }
 
+    /**
+     * @param i
+     */
     @Override
     public void onAudioChannelStopped(int i) {
 
     }
 
+
+    /**
+     * @param s
+     * @return
+     */
     @Override
     public boolean onDeviceScanningBegin(String s) {
-        return false;
+        return true;
     }
 
+    /**
+     * @param peerDevice
+     * @return
+     */
     @Override
     public boolean onDeviceFound(PeerDevice peerDevice) {
         return false;
     }
 
+    /**
+     * @param peerDevice
+     */
     @Override
     public void onDeviceLost(PeerDevice peerDevice) {
 
     }
 
+    /**
+     * @param s
+     */
     @Override
     public void onDeviceScanningEnd(String s) {
 
     }
 
+    /**
+     * @param peerDevice
+     * @return
+     */
     @Override
     public boolean onFavoriteDeviceAvailable(PeerDevice peerDevice) {
         return false;
     }
 
+    /**
+     * @param peerDevice
+     * @param dataLayer
+     * @return
+     */
     @Override
-    public boolean onDeviceConnected(PeerDevice peerDevice, IMCSDataLayer imcsDataLayer) {
-        return false;
+    public boolean onDeviceConnected(PeerDevice peerDevice, IMCSDataLayer dataLayer) {
+        if (dataLayer instanceof AOALayer) {
+            m_aoaLayer = (AOALayer) dataLayer;
+            //detect when the data layer is closed to remove it.
+            m_aoaLayer.registerCloseNotification(new IMCSConnectionClosedNotification() {
+                @Override
+                public void onConnectionClosed(IMCSDataLayer connection) {
+                    connection.unregisterCloseNotification(this);
+                    m_aoaLayer = null;
+                }
+            });
+        }
+
+        return true;
     }
 
+    /**
+     * @param peerDevice
+     * @param result
+     */
     @Override
-    public void onDeviceConnectFailed(PeerDevice peerDevice, EConnectionResult eConnectionResult) {
+    public void onDeviceConnectFailed(PeerDevice peerDevice, EConnectionResult result) {
+        if (m_listener != null) {
+            m_listener.onConnectionFailed(peerDevice, result);
+        }
 
+        //TODO: call connection fail m_connListListeners
     }
 
+    /**
+     * @param peerDevice
+     */
     @Override
     public void onDeviceDisconnected(PeerDevice peerDevice) {
-
+        MCSLogger.log(MCSLogger.eDebug, "onDeviceDisconnected()");
     }
 
+    /**
+     * @param eConnectionResult
+     */
     @Override
     public void onAutoconnectFailed(EConnectionResult eConnectionResult) {
 
     }
 
+    /**
+     * @param wlConnectionManager
+     * @param connectionScenario
+     * @param peerDevice
+     * @param i
+     */
     @Override
     public void onConnectionPartialStateChanged(WLConnectionManager wlConnectionManager, ConnectionScenario connectionScenario, PeerDevice peerDevice, int i) {
 
@@ -324,7 +511,8 @@ public class WebLinkClient implements IClientNotification,
 
     @Override
     public void onConnectionStateChanged(WLConnectionManager wlConnectionManager, IMCSDataLayer imcsDataLayer) {
-
+        MCSLogger.log(TAG, "onConnectionStateChanged(): ");
+        m_clientCore.onConnectionEstablished(wlConnectionManager);
     }
 }
 
