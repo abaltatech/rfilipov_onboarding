@@ -10,6 +10,8 @@ import android.content.Context;
 import android.graphics.Point;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Display;
 import android.view.View;
@@ -67,6 +69,24 @@ public class MainActivity extends AppCompatActivity {
     private final WebLinkClientCore wlClient = client.getWebLinkClientCore();
     private WLClientDisplay m_clientDisplay;
 
+    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private Runnable connectionCheckRunnable = new Runnable() {
+        @Override
+        public void run() {
+            // Check if the client is connected
+            if (client.isM_isConnected()) {
+                MCSLogger.log(eInfo, TAG, "********************Connection Running*******************");
+                // Schedule the runnable to run again after 1000 milliseconds (adjust as needed)
+                mHandler.postDelayed(this, 1000);
+            } else {
+                // Connection has stopped, log this final message.
+                MCSLogger.log(eInfo, TAG, "********************Connection Stoped*******************");
+            }
+        }
+    };
+
+
+
     public void onCreate(Bundle savedInstance) {
         super.onCreate(savedInstance);
 
@@ -75,17 +95,16 @@ public class MainActivity extends AppCompatActivity {
 
         String Address = "10.40.3.54:12345";
         PeerDevice device = new PeerDevice("Alice", "Socket", Address);
-        if (client.connectToDevice(device)){
+        if (client.connectToDevice(device)) {
             MCSLogger.log(eInfo, TAG, "********************Connection Established*******************");
-        }
-
-        else{
+        } else {
             MCSLogger.log(eInfo, TAG, "********************Connection Failed TO Be Established********************");
-
         }
+
+        mHandler.post(connectionCheckRunnable);
     }
 
-    void initWebLinkClient()
+        void initWebLinkClient()
     {
 
         WindowManager windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);

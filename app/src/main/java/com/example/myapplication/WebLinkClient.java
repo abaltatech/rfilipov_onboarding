@@ -101,6 +101,12 @@ public class WebLinkClient implements IClientNotification,
     private final List<IConnectionStatusNotification> m_connListeners = new ArrayList<IConnectionStatusNotification>();
     private final List<IServerUpdateNotification> m_serverListeners = new ArrayList<IServerUpdateNotification>();
     private AOALayer m_aoaLayer;
+    private IPingHandler m_pingHandler;
+    private boolean m_isConnected = false;
+    private int m_numberOfConnects = 0;
+    private String m_lastScenarioID;
+
+
 
 
     WebLinkClient(Context context, Map<String, String> properties){
@@ -131,7 +137,33 @@ public class WebLinkClient implements IClientNotification,
                 appCatalogManager,
                 m_connectionManager,
                 m_inputManager,
-                m_wlConnectionManager);
+                m_wlConnectionManager){
+            @Override
+            protected void onPingResponseTimeout() {
+                MCSLogger.log(TAG, "onPingResponseTimeout");
+                super.onPingResponseTimeout(); //Always call super for this function.
+                MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseTimeout called!");
+                //the communication is blocked!  do your own connection shutdown / stopping to reset!
+
+                if (m_pingHandler != null) {
+                    m_pingHandler.onPingResponseTimeout();
+                }
+            }
+
+            @Override
+            protected void onPingResponseReceived(boolean isSenderInactive) {
+                MCSLogger.log(TAG, "onPingResponseReceived, isSenderInactive: " + isSenderInactive);
+                super.onPingResponseReceived(isSenderInactive);//Always call super for this function.
+                MCSLogger.log(MCSLogger.ELogType.eDebug, TAG, "onPingResponseReceived "+isSenderInactive);
+                if (isSenderInactive) {
+                    //Do your own restart of the connection here! (if not auto-reconfiguring).
+                }
+
+                if (m_pingHandler != null) {
+                    m_pingHandler.onPingResponseReceived(isSenderInactive);
+                }
+            }
+        };
 
     }
 
@@ -510,9 +542,57 @@ public class WebLinkClient implements IClientNotification,
     }
 
     @Override
-    public void onConnectionStateChanged(WLConnectionManager wlConnectionManager, IMCSDataLayer imcsDataLayer) {
-        MCSLogger.log(TAG, "onConnectionStateChanged(): ");
-        m_clientCore.onConnectionEstablished(wlConnectionManager);
+    public void onConnectionStateChanged(WLConnectionManager manager, IMCSDataLayer dataLayer) {
+        boolean wasConnected = m_isConnected;
+        m_isConnected = m_wlConnectionManager.isConnected();
+        MCSLogger.log(TAG, "onConnectionStateChanged(): isConnected=" + m_isConnected);
+
+        if (!manager.isPartialConnected() && !manager.isConnected()) {
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+        }
+        if (!wasConnected && m_isConnected) {
+            if (BuildConfig.DEBUG) {
+                m_numberOfConnects++;
+                MCSLogger.log(TAG, "[ConnectivityTesting] Connect    number[" + m_numberOfConnects + "]");
+            }
+            if(dataLayer instanceof AOALayer) {
+                m_aoaLayer = (AOALayer) dataLayer;
+                //detect when the data layer is closed to remove it.
+                m_aoaLayer.registerCloseNotification(new IMCSConnectionClosedNotification(){
+                    @Override
+                    public void onConnectionClosed(IMCSDataLayer connection) {
+                        connection.unregisterCloseNotification(this);
+                        m_aoaLayer = null;
+                    }
+                });
+            }
+            m_clientCore.onConnectionEstablished(manager);
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+            EventLogger.logEventStart(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
+        } else if (wasConnected && !m_isConnected) {
+            if (BuildConfig.DEBUG) {
+                MCSLogger.log(TAG, "[ConnectivityTesting] Disconnect number[" + m_numberOfConnects + "]");
+            }
+            m_clientCore.onConnectionClosed(manager);
+            // TODO: Notify app about onConnectionStateChanged changed if needed
+            EventLogger.logEventEnd(EventLogger.EWLLogEvents.WL_CLIENT_CONNECTED);
+        } else {
+            MCSLogger.log(TAG, "onConnectionStateChanged: Other event");
+            String lastActiveScenario = manager.getActiveScenarioID();
+            if(lastActiveScenario == null) {
+                return;
+            }
+            String lastScenarioID = m_lastScenarioID;
+            if (lastScenarioID != null && !lastScenarioID.equals(lastActiveScenario)) {
+                MCSLogger.log(TAG, "Active Scenario is changed: " + lastScenarioID + " >> " + lastActiveScenario);
+            }
+            // TODO: Notify app about onConnectionStateChanged if needed
+        }
+        m_lastScenarioID = manager.getActiveScenarioID();
+    }
+
+    boolean isM_isConnected(){
+        return  m_isConnected;
     }
 }
 
