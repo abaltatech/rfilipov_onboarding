@@ -44,6 +44,10 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(files("libs/WLClientSDK.aar"))
     implementation(libs.core)
+
+    // Added dependency for javax.inject annotations
+    implementation("javax.inject:javax.inject:1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

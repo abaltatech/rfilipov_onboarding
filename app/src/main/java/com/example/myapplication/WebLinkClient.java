@@ -90,7 +90,6 @@ public class WebLinkClient implements IClientNotification,
         WLConnectionManager.ConnectionStateChangedDelegate,
         WLConnectionManager.ConnectionPartialStateChangedDelegate {
 
-
     private String TAG = "WebLinkClient";
     private WebLinkClientCore m_clientCore;
     private ConnectionManager m_connectionManager;
@@ -109,7 +108,7 @@ public class WebLinkClient implements IClientNotification,
 
 
 
-    WebLinkClient(Context context, Map<String, String> properties){
+    WebLinkClient(Context context, final Map<String, String> properties){
 
         initDeviceIdentity();
 
